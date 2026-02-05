@@ -1,11 +1,10 @@
 from config import client, OPENAI_MODEL
 
-
-def detect_scam(message: str) -> dict:
+def detect_scam(message: str) -> tuple[bool, float]:
     """
-    Analyze message and return scam/threat detection result
+    Detects whether a message indicates an attack or scam-like behavior.
+    Returns (is_scam, confidence_score)
     """
-
     try:
         response = client.chat.completions.create(
             model=OPENAI_MODEL,
@@ -13,59 +12,27 @@ def detect_scam(message: str) -> dict:
                 {
                     "role": "system",
                     "content": (
-                        "You are a cybersecurity threat detection system. "
-                        "Analyze the message and decide if it indicates malicious or suspicious activity "
-                        "(brute force, failed logins, hacking attempts, attacks, malware, etc).\n\n"
-                        "Respond STRICTLY in this format:\n"
-                        "RESULT: YES or NO\n"
-                        "CONFIDENCE: number between 0 and 1\n"
-                        "REASON: short explanation"
+                        "You are a cybersecurity analyst. "
+                        "Decide if the following message describes a cyber attack, intrusion, or malicious activity. "
+                        "Reply ONLY in this format: YES <confidence between 0 and 1> or NO <confidence between 0 and 1>."
                     )
                 },
-                {
-                    "role": "user",
-                    "content": message
-                }
+                {"role": "user", "content": message}
             ],
             temperature=0,
-            max_tokens=80
+            max_tokens=10
         )
 
-        content = response.choices[0].message.content.strip()
+        content = response.choices[0].message.content.strip().upper()
 
-        # Defaults
-        is_scam = False
-        confidence = 0.0
-        reason = "No threat detected"
+        is_scam = content.startswith("YES")
 
-        # Parse response
-        lines = content.splitlines()
-        for line in lines:
-            line = line.strip().upper()
-            if line.startswith("RESULT:"):
-                is_scam = "YES" in line
-            elif line.startswith("CONFIDENCE:"):
-                try:
-                    confidence = float(line.split(":")[1].strip())
-                except:
-                    confidence = 0.5
-            elif line.startswith("REASON:"):
-                reason = line.split(":", 1)[1].strip()
+        import re
+        match = re.search(r"(0\.\d+|1\.0)", content)
+        confidence = float(match.group(1)) if match else (0.9 if is_scam else 0.1)
 
-        return {
-            "reply": reason,
-            "is_scam": is_scam,
-            "confidence_score": confidence,
-            "extracted_info": {
-                "analysis": reason
-            }
-        }
+        return is_scam, confidence
 
     except Exception as e:
         print(f"Detector Error: {e}")
-        return {
-            "reply": "Detection failed due to system error",
-            "is_scam": False,
-            "confidence_score": 0.0,
-            "extracted_info": {}
-        }
+        return False, 0.0
